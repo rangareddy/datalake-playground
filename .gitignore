@@ -1,5 +1,5 @@
 # Runtime state written by the stack: the MinIO object store, the Postgres data
 # directory, Spark event logs and service logs.
-docker_run/data/
-docker_run/logs/
+data/
+logs/
 .DS_Store

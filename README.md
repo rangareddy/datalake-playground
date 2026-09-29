@@ -37,21 +37,21 @@ is built here.
 ```sh
 git clone https://github.com/rangareddy/datalake-playground.git
 cd datalake-playground
-sh docker_run/run_datalake.sh start
+sh run_datalake.sh start
 ```
 
 The first start pulls the images, about 14 GB on disk for `core` and 15 GB for `all`. Startup is ordered by health checks, so
 expect a couple of minutes while Hive initialises its metastore schema. Then:
 
 ```sh
-sh docker_run/run_datalake.sh status
+sh run_datalake.sh status
 ```
 
 Every service should read `Up (healthy)`, except the `mc` sidecar, which has no health
 check. To include MySQL, Trino and Jupyter:
 
 ```sh
-PROFILE=all sh docker_run/run_datalake.sh start
+PROFILE=all sh run_datalake.sh start
 ```
 
 ## Verify the stack
@@ -71,8 +71,9 @@ It should print `alive workers: 1`. If it prints `0`, jobs submitted to
 again.
 
 **Each table format can write, update and read through MinIO.** `lakehouse_check.py`
-in this repo writes three orders to an Iceberg, a Hudi and a Delta table, updates one,
-reads them back, and deletes everything it created:
+in this repo has one function per format, `check_iceberg`, `check_hudi` and
+`check_delta`. Each writes three orders, updates one, and reads them back; at the end
+the script deletes everything it created:
 
 ```sh
 docker cp lakehouse_check.py spark-master:/tmp/
@@ -139,7 +140,7 @@ with the same jars and environment.
 Both run on Java 17.
 
 ```sh
-SPARK_VERSION=4.1.3 sh docker_run/run_datalake.sh restart
+SPARK_VERSION=4.1.3 sh run_datalake.sh restart
 ```
 
 ## Components and ports
@@ -201,21 +202,21 @@ The start script reads three optional variables:
 
 | Task | Command |
 | ---- | ------- |
-| Start | `sh docker_run/run_datalake.sh start` |
-| Stop, keeping data | `sh docker_run/run_datalake.sh stop` |
-| Restart | `sh docker_run/run_datalake.sh restart` |
-| Status | `sh docker_run/run_datalake.sh status` |
-| Follow logs | `sh docker_run/run_datalake.sh logs spark-master` |
-| Check the compose file | `sh docker_run/run_datalake.sh validate` |
+| Start | `sh run_datalake.sh start` |
+| Stop, keeping data | `sh run_datalake.sh stop` |
+| Restart | `sh run_datalake.sh restart` |
+| Status | `sh run_datalake.sh status` |
+| Follow logs | `sh run_datalake.sh logs spark-master` |
+| Check the compose file | `sh run_datalake.sh validate` |
 | Shell into a service | `docker exec -it spark-master bash` |
 
 `stop` keeps data. The MinIO object store, the Postgres data directory and the logs live
-under `docker_run/data/` and `docker_run/logs/`. For a clean slate:
+under `data/` and `logs/`, next to the compose files. For a clean slate:
 
 ```sh
-sh docker_run/run_datalake.sh stop
-rm -rf docker_run/data docker_run/logs
-sh docker_run/run_datalake.sh start
+sh run_datalake.sh stop
+rm -rf data logs
+sh run_datalake.sh start
 ```
 
 To empty the warehouse without a full reset:
@@ -233,7 +234,7 @@ docker exec mc /usr/bin/mc rm --force --recursive minio/warehouse/
 | Several unrelated services fail at once | Docker's disk is full. `docker system df`, then `docker builder prune` or `docker image prune` |
 | Health checks take minutes, a JVM gets killed | Too little memory for Docker. Give it 8 GB for `core`, 10 GB for `all` |
 | A Spark job stops with exit code 137 and no error | The kernel killed the driver for memory. Pass `--driver-memory 1g`, or give Docker more memory |
-| Every S3 write fails and the bucket list is empty | The `mc` sidecar did not finish. `sh docker_run/run_datalake.sh logs mc` |
+| Every S3 write fails and the bucket list is empty | The `mc` sidecar did not finish. `sh run_datalake.sh logs mc` |
 | Hudi's first write to a new table takes about 20 seconds | Expected: it bootstraps the metadata table. Later writes are faster |
 | `Multiple sources found for hudi` | Only the `hudi-spark*-bundle_*.jar` from `$HUDI_HOME` belongs on `--jars`, not every jar there |
 | A script run on the host reports an old Spark version | Run Spark scripts inside `spark-master` with `docker exec`, not with a Spark installed on your machine |
@@ -241,14 +242,14 @@ docker exec mc /usr/bin/mc rm --force --recursive minio/warehouse/
 ## Repository layout
 
 ```text
-docker_run/
-  run_datalake.sh          start | stop | restart | status | logs | validate
-  docker-compose.yml       core profile
-  docker-compose_all.yml   all profile: core plus MySQL, Trino and Jupyter
-  db_scripts/              Postgres and MySQL init SQL
-  debezium_configs/        Debezium and Hudi Kafka Connect connector definitions
-  hudi_streamer/           Hudi Streamer property files, mounted into spark-master
-lakehouse_check.py         writes, updates and reads one table in each format
+run_datalake.sh          start | stop | restart | status | logs | validate
+docker-compose.yml       core profile
+docker-compose_all.yml   all profile: core plus MySQL, Trino and Jupyter
+db_scripts/              Postgres and MySQL init SQL, mounted into the databases
+debezium_configs/        Debezium and Hudi Kafka Connect connector definitions
+hudi_streamer/           Hudi Streamer property files, mounted into spark-master
+lakehouse_check.py       writes, updates and reads one table in each format
+data/, logs/             created on first start; ignored by git
 ```
 
 The images are built in a separate, private repository and published as

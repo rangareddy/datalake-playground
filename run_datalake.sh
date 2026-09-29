@@ -5,8 +5,8 @@ SCRIPT_DIR="$(
     cd "$(dirname "$0")"
     pwd -P
 )"
-# Self-contained on purpose: this directory is also published on its own as the public
-# datalake-playground repo, where nothing outside docker_run/ exists.
+# Self-contained on purpose: this directory's contents are also published on their own,
+# at the root of the public datalake-playground repo, where nothing else exists.
 if ! command -v docker >/dev/null 2>&1; then
     echo "ERROR: Docker is not installed. Please install docker and rerun." >&2
     exit 1
