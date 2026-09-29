@@ -22,6 +22,7 @@ is built here.
 - [Credentials and configuration](#credentials-and-configuration)
 - [Day-to-day commands](#day-to-day-commands)
 - [Troubleshooting](#troubleshooting)
+- [Warnings you can ignore](#warnings-you-can-ignore)
 - [Repository layout](#repository-layout)
 
 ## Prerequisites
@@ -30,7 +31,7 @@ is built here.
 | ----------- | ------ |
 | Docker | With Compose v2 (`docker compose`). The v1 `docker-compose` binary also works |
 | Disk | Free space in Docker's VM for the images plus data: about 10 GB for `core`, 20 GB for `all` |
-| Memory | 4 GB for the `core` profile, 10 GB for `all`. At idle they use about 1.9 GB and 6.3 GB; a Spark job adds 1 to 1.5 GB |
+| Memory | 4 GB for the `core` profile, 10 GB for `all`. At idle they use about 1.9 GB and 6.3 to 7 GB; a Spark job adds 1 to 1.5 GB |
 | CPU architecture | The images are `linux/amd64`. On Apple Silicon they run under emulation, which works but is slower |
 | Free ports | `core`: 5432, 7077, 8080, 9000-9001, 9083, 10000, 10002, 14040-14042, 18080-18081. `all` adds 2181, 3306, 8081-8083, 8888, 9082, 9084, 9092, 9101, 29092 |
 
@@ -180,11 +181,17 @@ Kafka UI at http://localhost:9082 shows topics, consumer groups and connectors.
 | `3.5.9` (default) | `ranga-spark` | 2.12 | 3.3.4 | 1.1.1 | 1.11.0 | 3.3.2 |
 | `4.1.3` | `ranga-spark4` | 2.13 | 3.4.2 | 1.2.0 | 1.11.0 | 4.1.0 |
 
-Both run on Java 17.
+Both run on Java 17, and everything in this README was tested on both.
 
 ```sh
-SPARK_VERSION=4.1.3 sh run_datalake.sh restart
+SPARK_VERSION=4.1.3 sh run_datalake.sh restart               # core profile
+PROFILE=all SPARK_VERSION=4.1.3 sh run_datalake.sh restart   # all profile
 ```
+
+**Pass the profile you started with.** `restart` stops and starts the profile it is
+given, and `core` is the default. Run on an `all` stack without `PROFILE=all`, it
+restarts the seven `core` containers and removes the other nine (Kafka, MySQL, Trino
+and Jupyter) as orphans, without an error.
 
 ## Components and ports
 
@@ -243,6 +250,8 @@ The start script reads three optional variables:
 
 ## Day-to-day commands
 
+On the `all` profile, prefix every command with `PROFILE=all`.
+
 | Task | Command |
 | ---- | ------- |
 | Start | `sh run_datalake.sh start` |
@@ -283,6 +292,25 @@ docker exec mc /usr/bin/mc rm --force --recursive minio/warehouse/
 | `kafka-connect` restarts over and over (`all` profile) | Docker is short of memory and the kernel kills Connect part-way through its plugin scan. Give Docker 10 GB |
 | `Multiple sources found for hudi` | Only the `hudi-spark*-bundle_*.jar` from `$HUDI_HOME` belongs on `--jars`, not every jar there |
 | A script run on the host reports an old Spark version | Run Spark scripts inside `spark-master` with `docker exec`, not with a Spark installed on your machine |
+| Kafka, MySQL, Trino and Jupyter are gone after a `restart` | The `all` stack was restarted without `PROFILE=all`, which removes them as orphans. Start again with `PROFILE=all` |
+| `hive-metastore` logs `Connection to postgres:5432 refused` and `Failed to get schema version` on the first start | Postgres runs its init SQL on a socket-only server and opens TCP a few seconds later; the metastore retries and then initialises its schema. Expected once, on an empty `data/` |
+
+## Warnings you can ignore
+
+Every one of these appeared in a clean, passing run on both Spark lines:
+
+| Where | Message | Why it is harmless |
+| ----- | ------- | ------------------ |
+| Spark jobs | `NativeCodeLoader: Unable to load native-hadoop library` | Hadoop falls back to its Java implementation |
+| Spark jobs with Hudi | `Unable to get Instrumentation` and `Unable to attach Serviceability Agent` | Hudi's object-size estimator cannot attach to the JVM and uses estimates instead |
+| Spark 4.1 jobs | `SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder"` | One library on the classpath finds no logging backend and stays silent; Spark's own logging is unaffected |
+| Spark 4.1 jobs, Trino | `Using incubator modules: jdk.incubator.vector` | The JVM's vector API is switched on |
+| Spark reading Kafka, Schema Registry | `These configurations '[...]' were supplied but are not used yet` | A client received settings meant for a different client type |
+| Postgres, first start | `relation "VERSION" does not exist` | The metastore checks for its schema before creating it |
+| Kafka, ZooKeeper, first start | `No meta.properties file`, `running in standalone mode` | A new single-node broker and ZooKeeper |
+| Kafka Connect, Schema Registry | Jersey `contains empty path annotation` / `does not implement any provider interfaces` | REST framework notices at startup |
+| Trino, during startup | `Error fetching memory info ... returned status 503` | The coordinator polls itself before it has finished starting |
+| MinIO | `Host local has more than 0 drives of set` | Single-drive mode, as expected for a local stack |
 
 ## Repository layout
 
