@@ -2,7 +2,7 @@
 
 A local lakehouse on one machine, for the demos on
 [rangareddy.github.io](https://rangareddy.github.io/). It starts MinIO as S3, a Hive
-Metastore, Spark with Hudi, Iceberg and Delta, Kafka with Debezium, Postgres, and
+Metastore, Spark with Hudi, Iceberg and Delta, Postgres, and
 (optionally) MySQL, Trino and Jupyter, all on one Docker network called `datalake`.
 
 This repo is **run-only**. It holds the compose files and the start script. The images,
@@ -30,7 +30,7 @@ is built here.
 | Disk | About 20 GB free in Docker's VM for the images, plus room for data |
 | Memory | 8 GB for the `core` profile, 10 GB for `all`. Most services are JVMs |
 | CPU architecture | The images are `linux/amd64`. On Apple Silicon they run under emulation, which works but is slower |
-| Free ports | 2181, 3306, 5432, 7077, 8080-8083, 8888, 9000-9001, 9082, 9084, 9092, 9101, 10000, 10002, 14040-14042, 18080-18081, 29092 |
+| Free ports | 3306, 5432, 7077, 8080, 8888, 9000-9001, 9083, 9084, 10000, 10002, 14040-14042, 18080-18081 |
 
 ## Quick start
 
@@ -40,7 +40,7 @@ cd datalake-playground
 sh run_datalake.sh start
 ```
 
-The first start pulls the images, about 14 GB on disk for `core` and 15 GB for `all`. Startup is ordered by health checks, so
+The first start pulls the images, about 5 GB on disk for `core` and 7 GB for `all`. Startup is ordered by health checks, so
 expect a couple of minutes while Hive initialises its metastore schema. Then:
 
 ```sh
@@ -149,13 +149,6 @@ Rows marked `all` exist only in the `all` profile.
 
 | Component | URL / port | Profile | Notes |
 | --------- | ---------- | ------- | ----- |
-| Zookeeper | localhost:2181 | core | Runs from the `ranga-kafka` image |
-| Kafka broker | localhost:9092 | core | In-network listener is `kafka:29092` |
-| Kafka JMX | localhost:9101 | core | |
-| Schema Registry | http://localhost:8081 | core | |
-| Kafka REST Proxy | http://localhost:8082 | core | |
-| Kafka Connect REST | http://localhost:8083 | core | Debezium connectors |
-| Kafka UI | http://localhost:9082 | core | |
 | Hive Metastore (thrift) | localhost:9083 | core | `thrift://hive-metastore:9083` inside the network |
 | HiveServer2 | localhost:10000 | core | Web UI at http://localhost:10002 |
 | Spark master UI | http://localhost:8080 | core | Submit to `spark://spark-master:7077` |
@@ -169,8 +162,8 @@ Rows marked `all` exist only in the `all` profile.
 | Trino | http://localhost:9084 | all | Container port 8080 |
 | Jupyter Lab | http://localhost:8888 | all | Token disabled |
 
-The Spark worker UI and Trino are remapped to avoid colliding with the Schema Registry on
-8081 and the Spark master on 8080.
+The Spark worker UI and Trino are remapped to host ports 18081 and 9084, so they do not
+collide with each other or with the Spark master on 8080.
 
 ## Credentials and configuration
 
@@ -246,8 +239,6 @@ run_datalake.sh          start | stop | restart | status | logs | validate
 docker-compose.yml       core profile
 docker-compose_all.yml   all profile: core plus MySQL, Trino and Jupyter
 db_scripts/              Postgres and MySQL init SQL, mounted into the databases
-debezium_configs/        Debezium and Hudi Kafka Connect connector definitions
-hudi_streamer/           Hudi Streamer property files, mounted into spark-master
 lakehouse_check.py       writes, updates and reads one table in each format
 data/, logs/             created on first start; ignored by git
 ```
