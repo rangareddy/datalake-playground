@@ -28,7 +28,7 @@ is built here.
 | ----------- | ------ |
 | Docker | With Compose v2 (`docker compose`). The v1 `docker-compose` binary also works |
 | Disk | About 20 GB free in Docker's VM for the images, plus room for data |
-| Memory | 8 GB for the `core` profile, 10 GB for `all`. Most services are JVMs |
+| Memory | 4 GB for the `core` profile, 8 GB for `all`. At idle they use about 1.9 GB and 4.4 GB; a Spark job adds 1 to 1.5 GB |
 | CPU architecture | The images are `linux/amd64`. On Apple Silicon they run under emulation, which works but is slower |
 | Free ports | 3306, 5432, 7077, 8080, 8888, 9000-9001, 9083, 9084, 10000, 10002, 14040-14042, 18080-18081 |
 
@@ -225,7 +225,7 @@ docker exec mc /usr/bin/mc rm --force --recursive minio/warehouse/
 | `no matching manifest for linux/arm64` | `PLATFORM` was set to `linux/arm64`. Unset it; the images are amd64 and run under emulation on Apple Silicon |
 | A Spark job submitted to the cluster never starts | No worker is registered. Check `aliveworkers` as in [Verify the stack](#verify-the-stack) and restart `spark-worker` |
 | Several unrelated services fail at once | Docker's disk is full. `docker system df`, then `docker builder prune` or `docker image prune` |
-| Health checks take minutes, a JVM gets killed | Too little memory for Docker. Give it 8 GB for `core`, 10 GB for `all` |
+| Health checks take minutes, a JVM gets killed | Too little memory for Docker. Give it 4 GB for `core`, 8 GB for `all` |
 | A Spark job stops with exit code 137 and no error | The kernel killed the driver for memory. Pass `--driver-memory 1g`, or give Docker more memory |
 | Every S3 write fails and the bucket list is empty | The `mc` sidecar did not finish. `sh run_datalake.sh logs mc` |
 | Hudi's first write to a new table takes about 20 seconds | Expected: it bootstraps the metadata table. Later writes are faster |
