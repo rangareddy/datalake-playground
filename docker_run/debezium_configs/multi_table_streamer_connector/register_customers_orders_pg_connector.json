@@ -1,0 +1,17 @@
+{
+  "name": "customer_order_table_pg_connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "2",
+    "plugin.name": "pgoutput",
+    "slot.name": "debezium",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "postgres",
+    "database.dbname": "cdc_db",
+    "schema.include.list": "public",
+    "topic.prefix": "cdc",
+    "tombstones.on.delete": "false"
+  }
+}
