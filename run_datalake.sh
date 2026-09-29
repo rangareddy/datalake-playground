@@ -43,7 +43,7 @@ fi
 export SPARK_IMAGE
 
 # PROFILE=core (default) starts docker-compose.yml.
-# PROFILE=all starts docker-compose_all.yml, which adds MySQL, Trino and Jupyter.
+# PROFILE=all starts docker-compose_all.yml, the larger profile (see the README).
 PROFILE="${PROFILE:-core}"
 case "$PROFILE" in
 core) COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml" ;;
@@ -121,7 +121,7 @@ validate | config)
     ;;
 *)
     echo "Error: Invalid state '$state'. Usage: $0 {start|stop|restart|status|logs [service...]|validate}"
-    echo "       Set PROFILE=all to include MySQL, Trino and Jupyter."
+    echo "       Set PROFILE=all for the larger profile (see the README)."
     exit 1
     ;;
 esac

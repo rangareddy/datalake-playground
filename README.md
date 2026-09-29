@@ -1,9 +1,10 @@
 # datalake-playground
 
 A local lakehouse on one machine, for the demos on
-[rangareddy.github.io](https://rangareddy.github.io/). It starts MinIO as S3, a Hive
-Metastore, Spark with Hudi, Iceberg and Delta, Postgres, and
-(optionally) MySQL, Trino and Jupyter, all on one Docker network called `datalake`.
+[rangareddy.github.io](https://rangareddy.github.io/). The `core` profile starts MinIO as
+S3, a Hive Metastore, Spark with Hudi, Iceberg and Delta, and Postgres. The `all` profile
+adds Kafka (with Schema Registry, REST Proxy, Kafka Connect with Debezium, and Kafka UI),
+MySQL, Trino and Jupyter. Everything is on one Docker network called `datalake`.
 
 This repo is **run-only**. It holds the compose files and the start script. The images,
 `rangareddy1988/ranga-*:1.0.0`, are pulled from Docker Hub on the first start; nothing
@@ -15,6 +16,7 @@ is built here.
 - [Quick start](#quick-start)
 - [Verify the stack](#verify-the-stack)
 - [Run your own PySpark script](#run-your-own-pyspark-script)
+- [Use Kafka (all profile)](#use-kafka-all-profile)
 - [Choosing a Spark line](#choosing-a-spark-line)
 - [Components and ports](#components-and-ports)
 - [Credentials and configuration](#credentials-and-configuration)
@@ -27,10 +29,10 @@ is built here.
 | Requirement | Detail |
 | ----------- | ------ |
 | Docker | With Compose v2 (`docker compose`). The v1 `docker-compose` binary also works |
-| Disk | About 20 GB free in Docker's VM for the images, plus room for data |
-| Memory | 4 GB for the `core` profile, 8 GB for `all`. At idle they use about 1.9 GB and 4.4 GB; a Spark job adds 1 to 1.5 GB |
+| Disk | Free space in Docker's VM for the images plus data: about 10 GB for `core`, 20 GB for `all` |
+| Memory | 4 GB for the `core` profile, 10 GB for `all`. At idle they use about 1.9 GB and 6.3 GB; a Spark job adds 1 to 1.5 GB |
 | CPU architecture | The images are `linux/amd64`. On Apple Silicon they run under emulation, which works but is slower |
-| Free ports | 3306, 5432, 7077, 8080, 8888, 9000-9001, 9083, 9084, 10000, 10002, 14040-14042, 18080-18081 |
+| Free ports | `core`: 5432, 7077, 8080, 9000-9001, 9083, 10000, 10002, 14040-14042, 18080-18081. `all` adds 2181, 3306, 8081-8083, 8888, 9082, 9084, 9092, 9101, 29092 |
 
 ## Quick start
 
@@ -40,7 +42,7 @@ cd datalake-playground
 sh run_datalake.sh start
 ```
 
-The first start pulls the images, about 5 GB on disk for `core` and 7 GB for `all`. Startup is ordered by health checks, so
+The first start pulls the images, about 5 GB on disk for `core` and 16 GB for `all`. Startup is ordered by health checks, so
 expect a couple of minutes while Hive initialises its metastore schema. Then:
 
 ```sh
@@ -48,7 +50,7 @@ sh run_datalake.sh status
 ```
 
 Every service should read `Up (healthy)`, except the `mc` sidecar, which has no health
-check. To include MySQL, Trino and Jupyter:
+check. To include Kafka, MySQL, Trino and Jupyter:
 
 ```sh
 PROFILE=all sh run_datalake.sh start
@@ -128,6 +130,47 @@ and Hudi writes by path. List Delta's extension **before** Iceberg's in
 Jupyter Lab (`all` profile) runs from the same Spark image at http://localhost:8888,
 with the same jars and environment.
 
+## Use Kafka (all profile)
+
+The `all` profile runs a Kafka broker with ZooKeeper, Schema Registry, the REST Proxy,
+Kafka Connect and Kafka UI. Inside the network the broker is `kafka:29092`; from your
+machine it is `localhost:9092`.
+
+**Produce and consume from the command line:**
+
+```sh
+docker exec kafka kafka-topics --bootstrap-server kafka:29092 \
+  --create --topic orders --partitions 1 --replication-factor 1
+printf '1001,PLACED\n1002,PLACED\n1003,SHIPPED\n' | \
+  docker exec -i kafka kafka-console-producer --bootstrap-server kafka:29092 --topic orders
+docker exec kafka kafka-console-consumer --bootstrap-server kafka:29092 \
+  --topic orders --from-beginning --max-messages 3
+```
+
+**Read a topic from Spark.** The Kafka source and its dependencies
+(`spark-sql-kafka-0-10`, `spark-token-provider-kafka-0-10`, `kafka-clients` and
+`commons-pool2`) are already in the Spark image, so no `--jars` are needed:
+
+```python
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName("kafka-read").getOrCreate()
+df = (spark.read.format("kafka")
+      .option("kafka.bootstrap.servers", "kafka:29092")
+      .option("subscribe", "orders")
+      .option("startingOffsets", "earliest")
+      .load())
+df.selectExpr("CAST(value AS STRING) AS value").show(truncate=False)
+spark.stop()
+```
+
+**Change data capture.** Kafka Connect ships the Debezium **Postgres** connector (there
+is no MySQL connector in this image). Its REST API is at http://localhost:8083;
+`curl -s localhost:8083/connector-plugins` lists what is installed. Connect scans every
+plugin jar before it opens that port, which takes around two minutes after `start`.
+
+Kafka UI at http://localhost:9082 shows topics, consumer groups and connectors.
+
 ## Choosing a Spark line
 
 `SPARK_VERSION` picks one of two Spark images; everything else follows from it.
@@ -161,9 +204,16 @@ Rows marked `all` exist only in the `all` profile.
 | MySQL | localhost:3306 | all | |
 | Trino | http://localhost:9084 | all | Container port 8080 |
 | Jupyter Lab | http://localhost:8888 | all | Token disabled |
+| ZooKeeper | localhost:2181 | all | Runs from the `ranga-kafka` image |
+| Kafka broker | localhost:9092 | all | `kafka:29092` inside the network |
+| Kafka JMX | localhost:9101 | all | |
+| Schema Registry | http://localhost:8081 | all | |
+| Kafka REST Proxy | http://localhost:8082 | all | |
+| Kafka Connect REST | http://localhost:8083 | all | Debezium Postgres connector |
+| Kafka UI | http://localhost:9082 | all | |
 
-The Spark worker UI and Trino are remapped to host ports 18081 and 9084, so they do not
-collide with each other or with the Spark master on 8080.
+The Spark worker UI and Trino are remapped to host ports 18081 and 9084 so they do not
+collide with the Schema Registry on 8081 and the Spark master on 8080.
 
 ## Credentials and configuration
 
@@ -185,7 +235,7 @@ The start script reads three optional variables:
 
 | Variable | Default | Effect |
 | -------- | ------- | ------ |
-| `PROFILE` | `core` | `all` adds MySQL, Trino and Jupyter |
+| `PROFILE` | `core` | `all` adds Kafka, MySQL, Trino and Jupyter |
 | `SPARK_VERSION` | 3.5.x | `4.1.3` switches to the Spark 4.1 image |
 | `PLATFORM` | `linux/amd64` | The platform every service runs as. Leave it: the images are amd64 only |
 
@@ -225,10 +275,12 @@ docker exec mc /usr/bin/mc rm --force --recursive minio/warehouse/
 | `no matching manifest for linux/arm64` | `PLATFORM` was set to `linux/arm64`. Unset it; the images are amd64 and run under emulation on Apple Silicon |
 | A Spark job submitted to the cluster never starts | No worker is registered. Check `aliveworkers` as in [Verify the stack](#verify-the-stack) and restart `spark-worker` |
 | Several unrelated services fail at once | Docker's disk is full. `docker system df`, then `docker builder prune` or `docker image prune` |
-| Health checks take minutes, a JVM gets killed | Too little memory for Docker. Give it 4 GB for `core`, 8 GB for `all` |
+| Health checks take minutes, a JVM gets killed | Too little memory for Docker. Give it 4 GB for `core`, 10 GB for `all` |
 | A Spark job stops with exit code 137 and no error | The kernel killed the driver for memory. Pass `--driver-memory 1g`, or give Docker more memory |
 | Every S3 write fails and the bucket list is empty | The `mc` sidecar did not finish. `sh run_datalake.sh logs mc` |
 | Hudi's first write to a new table takes about 20 seconds | Expected: it bootstraps the metadata table. Later writes are faster |
+| `kafka-connect` is not healthy for the first two minutes | Expected: Connect scans every plugin jar before it binds 8083 |
+| `kafka-connect` restarts over and over (`all` profile) | Docker is short of memory and the kernel kills Connect part-way through its plugin scan. Give Docker 10 GB |
 | `Multiple sources found for hudi` | Only the `hudi-spark*-bundle_*.jar` from `$HUDI_HOME` belongs on `--jars`, not every jar there |
 | A script run on the host reports an old Spark version | Run Spark scripts inside `spark-master` with `docker exec`, not with a Spark installed on your machine |
 
